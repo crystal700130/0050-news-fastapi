@@ -1,9 +1,9 @@
 from typing import Optional
 
+import requests
 import trafilatura
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
-
 
 app = FastAPI(
     title="0050 News Extraction API",
@@ -37,18 +37,37 @@ def health_check():
 
 @app.post("/extract", response_model=ExtractResponse)
 def extract_article(request: ExtractRequest):
+
     url = str(request.url)
 
-    downloaded = trafilatura.fetch_url(url)
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/138.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+    }
 
-    if not downloaded:
-        raise HTTPException(
-            status_code=400,
-            detail="網頁下載失敗，可能是網址錯誤或網站禁止存取。",
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=20,
         )
 
+        response.raise_for_status()
+
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"網頁下載失敗：{exc}",
+        )
+
+    html = response.text
+
     content = trafilatura.extract(
-        downloaded,
+        html,
         url=url,
         output_format="markdown",
         include_comments=False,
@@ -64,7 +83,7 @@ def extract_article(request: ExtractRequest):
             detail="網頁下載成功，但無法擷取文章正文。",
         )
 
-    metadata = trafilatura.extract_metadata(downloaded)
+    metadata = trafilatura.extract_metadata(html)
 
     cleaned_content = "\n".join(
         line.strip()
